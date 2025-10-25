@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Kid-Needs Pie – clean edition</title>
+    <title>Kid-Needs Pie – fractal grouping</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
@@ -20,18 +20,26 @@
         flex-direction: column;
         height: 100vh;
       }
-      #info {
+      #toolbar {
         flex: 0 0 auto;
-        padding: 12px 16px;
+        padding: 10px 16px;
         background: #fff;
         border-bottom: 1px solid #e0e0e0;
-        font-size: 1.05em;
-        display: flex;
-        align-items: center;
+        display: grid;
+        grid-template-columns: 1fr auto;
         gap: 12px;
+        align-items: center;
       }
-      #info b {
-        color: var(--accent);
+      #granularityWrap {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      #granularity {
+        width: clamp(220px, 40vw, 520px);
+      }
+      #detail {
+        font-size: 1.02rem;
       }
       #pieBox {
         flex: 1 1 auto;
@@ -55,15 +63,33 @@
       }
       .labels {
         pointer-events: none;
-        font-size: 13px;
+        font-size: 12px;
         fill: var(--text);
       }
+      small.muted {
+        color: #666;
+      }
     </style>
+    <!-- D3 -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
   </head>
   <body>
-    <div id="info">
-      <span id="detail">Click a slice to see details</span>
+    <div id="toolbar">
+      <div id="granularityWrap">
+        <label for="granularity"><b>Group granularity</b></label>
+        <input
+          id="granularity"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+        <small class="muted" id="granularityHint">coarse</small>
+      </div>
+      <div id="detail">Click a slice to see details</div>
     </div>
+
     <div id="pieBox">
       <svg
         id="pie"
@@ -72,10 +98,8 @@
       ></svg>
     </div>
 
-    <script type="module">
-      import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
-
-      /* ---------- CONFIG ---------- */
+    <script>
+      /* ---------- CONFIG (base categories) ---------- */
       const GROUPS = [
         "Food",
         "Health",
@@ -88,9 +112,8 @@
         "Social",
         "Rest",
       ];
-      const COLORS = d3.schemePastel1;
 
-      /* ---------- 100 KID-NEEDS ITEMS ---------- */
+      /* ---------- RAW WORD LIST ---------- */
       const RAW = `
 tummy hurt,snack,hunger,apple,soup,bread,thirsty,water,milk,juice
 scary dream,hug,mom,dad,comfort,cry,soft toy,blanket,night light
@@ -114,6 +137,7 @@ pet,dog,cat,feed,water,walk,fur,cuddle,lick,responsibility
 sick,fever,thermometer,medicine,stay home,soup,rest,quiet,recover
 `;
 
+      /* ---------- Base grouping heuristic ---------- */
       function guessGroup(w) {
         const s = w.toLowerCase();
         if (
@@ -171,26 +195,31 @@ sick,fever,thermometer,medicine,stay home,soup,rest,quiet,recover
         return "Routine";
       }
 
+      /* ---------- Build nodes ---------- */
       const nodes = [
         ...new Set(
           RAW.split(/[\n,]+/)
-            .map((x) => x.trim())
+            .map((s) => s.trim())
             .filter(Boolean)
         ),
-      ].map((d) => ({
+      ].map((label) => ({
         id: crypto.randomUUID(),
-        label: d,
-        group: guessGroup(d),
+        label,
+        baseGroup: guessGroup(label),
       }));
 
+      const idByLabel = new Map(nodes.map((n) => [n.label, n.id]));
+      const nodeById = new Map(nodes.map((n) => [n.id, n]));
+
+      /* ---------- Build weighted links ---------- */
       const links = [];
       const add = (a, b, w) => {
-        const na = nodes.find((x) => x.label === a),
-          nb = nodes.find((x) => x.label === b);
-        if (na && nb) links.push({ source: na.id, target: nb.id, w });
+        const sa = idByLabel.get(a),
+          sb = idByLabel.get(b);
+        if (sa && sb) links.push({ source: sa, target: sb, w });
       };
 
-      /* sample link setup (unchanged) */
+      /* (Same associations as before) */
       add("tummy hurt", "hunger", 0.95);
       add("tummy hurt", "snack", 0.8);
       add("hunger", "apple", 0.9);
@@ -240,20 +269,85 @@ sick,fever,thermometer,medicine,stay home,soup,rest,quiet,recover
       add("allergy", "check label", 0.8);
       add("rain", "coat", 0.9);
 
-      /* ---------- COMPUTE GROUP WEIGHTS ---------- */
-      const groupWeight = Object.fromEntries(GROUPS.map((g) => [g, 0]));
-      links.forEach((l) => {
-        const ga = nodes.find((x) => x.id === l.source).group;
-        const gb = nodes.find((x) => x.id === l.target).group;
-        groupWeight[ga] += l.w;
-        if (ga !== gb) groupWeight[gb] += l.w;
-      });
-      const pieData = GROUPS.map((g) => ({
-        group: g,
-        value: groupWeight[g],
-      })).filter((d) => d.value > 0);
+      /* ---------- Fractal-like component builder ---------- */
+      // threshold in [0, ~0.96] -> higher == finer (smaller components)
+      function buildComponents(threshold) {
+        // For each base group, take nodes in that group.
+        const comps = []; // [{id, name, ids:Set}]
+        const compOfNode = new Map(); // nodeId -> compIdx
 
-      /* ---------- DRAW PIE ---------- */
+        let compIdx = 0;
+        for (const g of GROUPS) {
+          const gNodes = nodes
+            .filter((n) => n.baseGroup === g)
+            .map((n) => n.id);
+          if (gNodes.length === 0) continue;
+
+          // Filter links that are within this base group and above threshold
+          const gSet = new Set(gNodes);
+          const gLinks = links.filter(
+            (l) => gSet.has(l.source) && gSet.has(l.target) && l.w >= threshold
+          );
+
+          // Build adjacency
+          const adj = new Map(gNodes.map((id) => [id, new Set()]));
+          for (const { source, target } of gLinks) {
+            adj.get(source).add(target);
+            adj.get(target).add(source);
+          }
+
+          // Connected components (within the base group given current threshold)
+          const seen = new Set();
+          for (const id of gNodes) {
+            if (seen.has(id)) continue;
+            const stack = [id];
+            seen.add(id);
+            const collect = new Set([id]);
+            while (stack.length) {
+              const cur = stack.pop();
+              for (const nei of adj.get(cur) || []) {
+                if (!seen.has(nei)) {
+                  seen.add(nei);
+                  stack.push(nei);
+                  collect.add(nei);
+                }
+              }
+            }
+            const label =
+              collect.size === gNodes.length ? g : `${g} • ${++compIdx}`;
+            comps.push({ id: label, base: g, ids: collect });
+          }
+        }
+
+        // Value for each component = internal edges + half of edges to outside
+        const value = new Map(comps.map((c) => [c.id, 0]));
+        const compIdOf = (nid) => {
+          for (const c of comps) if (c.ids.has(nid)) return c.id;
+          return null;
+        };
+
+        for (const l of links) {
+          const ca = compIdOf(l.source);
+          const cb = compIdOf(l.target);
+          if (!ca || !cb) continue;
+          if (ca === cb) value.set(ca, value.get(ca) + l.w);
+          else {
+            value.set(ca, value.get(ca) + l.w / 2);
+            value.set(cb, value.get(cb) + l.w / 2);
+          }
+        }
+
+        // Attach values and items
+        for (const c of comps) {
+          c.value = +(value.get(c.id) || 0);
+          c.items = [...c.ids].map((id) => nodeById.get(id).label).sort();
+        }
+
+        // Only keep components with positive weight
+        return comps.filter((c) => c.value > 0);
+      }
+
+      /* ---------- Pie drawing ---------- */
       const svg = d3.select("#pie");
       const width = 500,
         height = 500;
@@ -269,38 +363,100 @@ sick,fever,thermometer,medicine,stay home,soup,rest,quiet,recover
         .innerRadius(radius * 0.7)
         .outerRadius(radius * 0.7);
 
-      const slices = gPie
-        .selectAll(".slice")
-        .data(pie(pieData))
-        .join("path")
-        .attr("class", "slice")
-        .attr("d", arc)
-        .attr("fill", (d, i) => COLORS[i % COLORS.length])
-        .on("click", showDetail);
+      function colorForIndex(i, n) {
+        // Smooth spectrum for arbitrary n
+        return d3.interpolateSpectral(i / Math.max(1, n - 1));
+      }
 
-      gPie
-        .selectAll(".labels")
-        .data(pie(pieData))
-        .join("text")
-        .attr("class", "labels")
-        .attr("transform", (d) => `translate(${labelArc.centroid(d)})`)
-        .attr("text-anchor", "middle")
-        .text((d) => d.data.group);
+      function draw(comps) {
+        const arcs = pie(comps);
 
-      function showDetail(evt, d) {
-        const grp = d.data.group;
-        const items = [
-          ...new Set(nodes.filter((n) => n.group === grp).map((n) => n.label)),
-        ].sort();
-        const total = d.data.value.toFixed(1);
-        document.getElementById(
-          "detail"
-        ).innerHTML = `<b>${grp}</b> &nbsp; total link weight: <b>${total}</b> &nbsp; items: ${items
-          .slice(0, 15)
+        const slices = gPie
+          .selectAll("path.slice")
+          .data(arcs, (d) => d.data.id);
+
+        slices
+          .enter()
+          .append("path")
+          .attr("class", "slice")
+          .attr("d", arc)
+          .attr("fill", (d, i) => colorForIndex(i, arcs.length))
+          .on("click", (_, d) => showDetail(d.data))
+          .append("title")
+          .text((d) => `${d.data.id}: ${d.data.value.toFixed(2)}`);
+
+        slices
+          .transition()
+          .duration(250)
+          .attr("d", arc)
+          .attr("fill", (d, i) => colorForIndex(i, arcs.length));
+
+        slices.exit().remove();
+
+        const labels = gPie
+          .selectAll("text.labels")
+          .data(arcs, (d) => d.data.id);
+
+        labels
+          .enter()
+          .append("text")
+          .attr("class", "labels")
+          .attr("text-anchor", "middle")
+          .attr("transform", (d) => `translate(${labelArc.centroid(d)})`)
+          .text((d) => d.data.id)
+          .append("title")
+          .text((d) => `${d.data.id}: ${d.data.value.toFixed(2)}`);
+
+        labels
+          .transition()
+          .duration(250)
+          .attr("transform", (d) => `translate(${labelArc.centroid(d)})`)
+          .tween("text", function (d) {
+            this.textContent = d.data.id;
+          });
+
+        labels.exit().remove();
+      }
+
+      function showDetail(comp) {
+        const total = comp.value.toFixed(2);
+        const items = comp.items;
+        document.getElementById("detail").innerHTML = `<b>${
+          comp.id
+        }</b> &nbsp; total link weight: <b>${total}</b> &nbsp; items: ${items
+          .slice(0, 18)
           .join(", ")}${
-          items.length > 15 ? ` … and ${items.length - 15} more` : ""
+          items.length > 18 ? ` … and ${items.length - 18} more` : ""
         }`;
       }
+
+      /* ---------- Slider wiring ---------- */
+      const slider = document.getElementById("granularity");
+      const hint = document.getElementById("granularityHint");
+
+      // Map slider [0..1] -> threshold [0..0.96]
+      const toThreshold = d3.scaleLinear().domain([0, 1]).range([0, 0.96]);
+
+      function updateFromSlider() {
+        const t = +slider.value;
+        hint.textContent =
+          t < 0.05
+            ? "coarse"
+            : t > 0.95
+            ? "atomic"
+            : `fine ${Math.round(t * 100)}%`;
+        const threshold = toThreshold(t);
+        const comps = buildComponents(threshold);
+        draw(comps);
+        // Clear detail on update
+        document.getElementById("detail").textContent =
+          "Click a slice to see details";
+      }
+
+      slider.addEventListener("input", updateFromSlider);
+
+      // Initial render
+      updateFromSlider();
     </script>
   </body>
 </html>
