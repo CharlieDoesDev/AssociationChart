@@ -1,4 +1,3 @@
-// chart.js — all rendering & grouping logic
 let nodes = [];
 let links = [];
 let nodeById = new Map();
@@ -18,8 +17,8 @@ const labelArc = d3
   .innerRadius(radius * 0.7)
   .outerRadius(radius * 0.7);
 
-let threshold = 0; // current threshold
-let onDetailCb = () => {}; // detail callback
+let threshold = 0;
+let onDetailCb = () => {};
 
 const GROUPS = [
   "Food",
@@ -115,7 +114,6 @@ function colorForIndex(i, n) {
 
 function buildComponents(th) {
   const comps = [];
-  // Within each base group, form connected components using only links >= th
   for (const g of GROUPS) {
     const gNodes = nodes.filter((n) => n.baseGroup === g).map((n) => n.id);
     if (!gNodes.length) continue;
@@ -154,7 +152,6 @@ function buildComponents(th) {
     }
   }
 
-  // Assign weights to components
   const value = new Map(comps.map((c) => [c.id, 0]));
   const compOf = (nid) => comps.find((c) => c.ids.has(nid))?.id ?? null;
 
@@ -169,7 +166,6 @@ function buildComponents(th) {
     }
   }
 
-  // finalize
   for (const c of comps) {
     c.value = +(value.get(c.id) || 0);
     c.items = [...c.ids].map((id) => nodeById.get(id).label).sort();
@@ -199,34 +195,42 @@ function draw(comps) {
           items.length > 18 ? ` … and ${items.length - 18} more` : ""
         }`
       );
-    })
-    .append("title")
-    .text((d) => `${d.data.id}: ${d.data.value.toFixed(2)}`);
+    });
 
   slices
     .transition()
     .duration(250)
     .attr("d", arc)
     .attr("fill", (d, i) => colorForIndex(i, arcs.length));
-
   slices.exit().remove();
 
   const labels = gPie.selectAll("text.labels").data(arcs, (d) => d.data.id);
+
+  // --- CHANGE STARTS HERE ---
   labels
     .enter()
     .append("text")
     .attr("class", "labels")
     .attr("text-anchor", "middle")
-    .attr("transform", (d) => `translate(${labelArc.centroid(d)})`)
+    .attr("transform", (d) => {
+      const [x, y] = labelArc.centroid(d);
+      const angle = (((d.startAngle + d.endAngle) / 2) * 180) / Math.PI;
+      return `translate(${x},${y}) rotate(${angle - 90})`;
+    })
     .text((d) => d.data.id);
 
   labels
     .transition()
     .duration(250)
-    .attr("transform", (d) => `translate(${labelArc.centroid(d)})`)
+    .attr("transform", (d) => {
+      const [x, y] = labelArc.centroid(d);
+      const angle = (((d.startAngle + d.endAngle) / 2) * 180) / Math.PI;
+      return `translate(${x},${y}) rotate(${angle - 90})`;
+    })
     .tween("text", function (d) {
       this.textContent = d.data.id;
     });
+  // --- CHANGE ENDS HERE ---
 
   labels.exit().remove();
 }
@@ -241,7 +245,6 @@ export function initChart({ raw, links: linkTriples, onDetail }) {
   nodes = buildNodesFromRaw(raw);
   nodeById = new Map(nodes.map((n) => [n.id, n]));
   const idByLabel = indexByLabel(nodes);
-
   links = linkTriples
     .map(([a, b, w]) => ({
       source: idByLabel.get(a),
@@ -249,7 +252,6 @@ export function initChart({ raw, links: linkTriples, onDetail }) {
       w,
     }))
     .filter((l) => l.source && l.target);
-
   render();
 }
 
