@@ -3,7 +3,11 @@ let nodes = [];
 let links = [];
 let nodeById = new Map();
 
-const svg = d3.select("#vis");
+// --- FIX: be resilient to either <svg id="vis"> or <svg id="pie"> ---
+let svg = d3.select("#vis");
+if (svg.empty()) svg = d3.select("#pie"); // fallback for older index.html
+// --------------------------------------------------------------------
+
 const width = 500,
   height = 500;
 const center = [width / 2, height / 2];
@@ -114,7 +118,7 @@ function colorForIndex(i, n) {
   return d3.interpolateSpectral(i / Math.max(1, n - 1));
 }
 
-/* -------- components per threshold (same as before) -------- */
+/* -------- components per threshold -------- */
 function buildComponents(th) {
   const comps = [];
   for (const g of GROUPS) {
@@ -182,39 +186,45 @@ function drawPie(comps) {
 
   const arcs = pie(comps);
 
-  const slices = gMain.selectAll("path.slice").data(arcs, (d) => d.data.id);
-  slices
-    .enter()
-    .append("path")
+  gMain
+    .selectAll("path.slice")
+    .data(arcs, (d) => d.data.id)
+    .join("path")
     .attr("class", "slice")
     .attr("d", arc)
     .attr("fill", (d, i) => colorForIndex(i, arcs.length))
-    .on("click", (_, d) => showDetail(d.data));
-
-  const labelMinAngle = (8 * Math.PI) / 180; // hide labels on tiny slices (~8°)
-  const labels = gMain.selectAll("text.label").data(
-    arcs.filter((a) => a.endAngle - a.startAngle >= labelMinAngle),
-    (d) => d.data.id
-  );
-
-  labels
-    .enter()
-    .append("text")
-    .attr("class", "label")
-    .attr("text-anchor", "middle")
-    .attr("transform", (d) => {
-      const [x, y] = labelArc.centroid(d);
-      const angle = (((d.startAngle + d.endAngle) / 2) * 180) / Math.PI;
-      return `translate(${x},${y}) rotate(${angle - 90})`;
-    })
-    .style("font-size", "12px")
-    .text((d) => d.data.id);
-
-  // tooltips via title on slices
-  gMain
-    .selectAll("path.slice")
+    .on("click", (_, d) => showDetail(d.data))
     .append("title")
     .text((d) => `${d.data.id}: ${d.data.value.toFixed(2)}`);
+
+  const labelMinAngle = (8 * Math.PI) / 180;
+  gMain
+    .selectAll("text.label")
+    .data(
+      arcs.filter((a) => a.endAngle - a.startAngle >= labelMinAngle),
+      (d) => d.data.id
+    )
+    .join(
+      (enter) =>
+        enter
+          .append("text")
+          .attr("class", "label")
+          .attr("text-anchor", "middle")
+          .style("font-size", "12px")
+          .attr("transform", (d) => {
+            const [x, y] = labelArc.centroid(d);
+            const angle = (((d.startAngle + d.endAngle) / 2) * 180) / Math.PI;
+            return `translate(${x},${y}) rotate(${angle - 90})`;
+          })
+          .text((d) => d.data.id),
+      (update) =>
+        update.attr("transform", (d) => {
+          const [x, y] = labelArc.centroid(d);
+          const angle = (((d.startAngle + d.endAngle) / 2) * 180) / Math.PI;
+          return `translate(${x},${y}) rotate(${angle - 90})`;
+        }),
+      (exit) => exit.remove()
+    );
 }
 
 /* ------------------ BUBBLE VIEW ------------------- */
@@ -247,7 +257,6 @@ function drawBubbles(comps) {
     .force("y", d3.forceY().strength(0.05))
     .stop();
 
-  // Run a few ticks for a stable layout
   for (let i = 0; i < 250; i++) sim.tick();
 
   const g = gMain
@@ -267,7 +276,6 @@ function drawBubbles(comps) {
     .attr("stroke", "#fff")
     .attr("stroke-width", 2);
 
-  // Show labels only if bubble radius allows
   g.filter((d) => d.r >= 18)
     .append("text")
     .attr("text-anchor", "middle")
@@ -275,7 +283,6 @@ function drawBubbles(comps) {
     .style("font-size", "12px")
     .text((d) => d.id);
 
-  // titles
   g.append("title").text((d) => `${d.id}: ${d.value.toFixed(2)}`);
 }
 
