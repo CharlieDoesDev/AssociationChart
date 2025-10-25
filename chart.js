@@ -1,15 +1,18 @@
+// chart.js — rendering & grouping for Pie and Bubble views
 let nodes = [];
 let links = [];
 let nodeById = new Map();
 
-const svg = d3.select("#pie");
+const svg = d3.select("#vis");
 const width = 500,
   height = 500;
-const radius = Math.min(width, height) / 2 - 20;
-const gPie = svg
-  .append("g")
-  .attr("transform", `translate(${width / 2},${height / 2})`);
+const center = [width / 2, height / 2];
 
+const gMain = svg
+  .append("g")
+  .attr("transform", `translate(${center[0]},${center[1]})`);
+
+const radius = Math.min(width, height) / 2 - 20;
 const pie = d3.pie().value((d) => d.value);
 const arc = d3.arc().innerRadius(0).outerRadius(radius);
 const labelArc = d3
@@ -18,6 +21,7 @@ const labelArc = d3
   .outerRadius(radius * 0.7);
 
 let threshold = 0;
+let currentView = "pie";
 let onDetailCb = () => {};
 
 const GROUPS = [
@@ -101,17 +105,16 @@ function buildNodesFromRaw(raw) {
     baseGroup: guessGroup(label),
   }));
 }
-
 function indexByLabel(nodes) {
   const m = new Map();
   nodes.forEach((n) => m.set(n.label, n.id));
   return m;
 }
-
 function colorForIndex(i, n) {
   return d3.interpolateSpectral(i / Math.max(1, n - 1));
 }
 
+/* -------- components per threshold (same as before) -------- */
 function buildComponents(th) {
   const comps = [];
   for (const g of GROUPS) {
@@ -173,71 +176,128 @@ function buildComponents(th) {
   return comps.filter((c) => c.value > 0);
 }
 
-function draw(comps) {
+/* -------------------- PIE VIEW -------------------- */
+function drawPie(comps) {
+  gMain.selectAll("*").remove();
+
   const arcs = pie(comps);
 
-  const slices = gPie.selectAll("path.slice").data(arcs, (d) => d.data.id);
+  const slices = gMain.selectAll("path.slice").data(arcs, (d) => d.data.id);
   slices
     .enter()
     .append("path")
     .attr("class", "slice")
     .attr("d", arc)
     .attr("fill", (d, i) => colorForIndex(i, arcs.length))
-    .on("click", (_, d) => {
-      const total = d.data.value.toFixed(2);
-      const items = d.data.items;
-      onDetailCb(
-        `<b>${
-          d.data.id
-        }</b> &nbsp; total link weight: <b>${total}</b> &nbsp; items: ${items
-          .slice(0, 18)
-          .join(", ")}${
-          items.length > 18 ? ` … and ${items.length - 18} more` : ""
-        }`
-      );
-    });
+    .on("click", (_, d) => showDetail(d.data));
 
-  slices
-    .transition()
-    .duration(250)
-    .attr("d", arc)
-    .attr("fill", (d, i) => colorForIndex(i, arcs.length));
-  slices.exit().remove();
+  const labelMinAngle = (8 * Math.PI) / 180; // hide labels on tiny slices (~8°)
+  const labels = gMain.selectAll("text.label").data(
+    arcs.filter((a) => a.endAngle - a.startAngle >= labelMinAngle),
+    (d) => d.data.id
+  );
 
-  const labels = gPie.selectAll("text.labels").data(arcs, (d) => d.data.id);
-
-  // --- CHANGE STARTS HERE ---
   labels
     .enter()
     .append("text")
-    .attr("class", "labels")
+    .attr("class", "label")
     .attr("text-anchor", "middle")
     .attr("transform", (d) => {
       const [x, y] = labelArc.centroid(d);
       const angle = (((d.startAngle + d.endAngle) / 2) * 180) / Math.PI;
       return `translate(${x},${y}) rotate(${angle - 90})`;
     })
+    .style("font-size", "12px")
     .text((d) => d.data.id);
 
-  labels
-    .transition()
-    .duration(250)
-    .attr("transform", (d) => {
-      const [x, y] = labelArc.centroid(d);
-      const angle = (((d.startAngle + d.endAngle) / 2) * 180) / Math.PI;
-      return `translate(${x},${y}) rotate(${angle - 90})`;
-    })
-    .tween("text", function (d) {
-      this.textContent = d.data.id;
-    });
-  // --- CHANGE ENDS HERE ---
+  // tooltips via title on slices
+  gMain
+    .selectAll("path.slice")
+    .append("title")
+    .text((d) => `${d.data.id}: ${d.data.value.toFixed(2)}`);
+}
 
-  labels.exit().remove();
+/* ------------------ BUBBLE VIEW ------------------- */
+function drawBubbles(comps) {
+  gMain.selectAll("*").remove();
+
+  const values = comps.map((c) => c.value);
+  const rScale = d3
+    .scaleSqrt()
+    .domain([d3.min(values), d3.max(values)])
+    .range([12, 60]);
+
+  const nodesB = comps.map((c, i) => ({
+    id: c.id,
+    items: c.items,
+    value: c.value,
+    r: rScale(c.value),
+    i,
+  }));
+
+  const sim = d3
+    .forceSimulation(nodesB)
+    .force("center", d3.forceCenter(0, 0))
+    .force("charge", d3.forceManyBody().strength(0))
+    .force(
+      "collide",
+      d3.forceCollide().radius((d) => d.r + 2)
+    )
+    .force("x", d3.forceX().strength(0.05))
+    .force("y", d3.forceY().strength(0.05))
+    .stop();
+
+  // Run a few ticks for a stable layout
+  for (let i = 0; i < 250; i++) sim.tick();
+
+  const g = gMain
+    .selectAll("g.b")
+    .data(nodesB, (d) => d.id)
+    .enter()
+    .append("g")
+    .attr("class", "b")
+    .attr("transform", (d) => `translate(${d.x || 0},${d.y || 0})`)
+    .on("click", (_, d) =>
+      showDetail({ id: d.id, items: d.items, value: d.value })
+    );
+
+  g.append("circle")
+    .attr("r", (d) => d.r)
+    .attr("fill", (d, i) => colorForIndex(i, nodesB.length))
+    .attr("stroke", "#fff")
+    .attr("stroke-width", 2);
+
+  // Show labels only if bubble radius allows
+  g.filter((d) => d.r >= 18)
+    .append("text")
+    .attr("text-anchor", "middle")
+    .attr("dy", ".35em")
+    .style("font-size", "12px")
+    .text((d) => d.id);
+
+  // titles
+  g.append("title").text((d) => `${d.id}: ${d.value.toFixed(2)}`);
+}
+
+/* ----------------- helpers & API ------------------ */
+function showDetail(comp) {
+  const total = comp.value.toFixed(2);
+  const items = comp.items;
+  onDetailCb(
+    `<b>${
+      comp.id
+    }</b> &nbsp; total link weight: <b>${total}</b> &nbsp; items: ${items
+      .slice(0, 18)
+      .join(", ")}${
+      items.length > 18 ? ` … and ${items.length - 18} more` : ""
+    }`
+  );
 }
 
 function render() {
   const comps = buildComponents(threshold);
-  draw(comps);
+  if (currentView === "pie") drawPie(comps);
+  else drawBubbles(comps);
 }
 
 export function initChart({ raw, links: linkTriples, onDetail }) {
@@ -257,5 +317,10 @@ export function initChart({ raw, links: linkTriples, onDetail }) {
 
 export function setThreshold(t) {
   threshold = Math.max(0, Math.min(0.96, t));
+  render();
+}
+
+export function setView(view) {
+  currentView = view === "bubbles" ? "bubbles" : "pie";
   render();
 }

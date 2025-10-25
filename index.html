@@ -2,12 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <title>Kid-Needs Pie – angled labels</title>
+    <title>Kid-Needs – Pie & Bubbles</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <style>
       :root {
         --bg: #fafafa;
         --text: #222;
+        --muted: #666;
+        --border: #e5e7eb;
       }
       html,
       body {
@@ -23,30 +25,56 @@
         flex-direction: column;
       }
       #toolbar {
-        display: flex;
-        gap: 16px;
+        display: grid;
+        grid-template-columns: auto auto 1fr;
+        gap: 12px;
         align-items: center;
         padding: 10px 16px;
         background: #fff;
-        border-bottom: 1px solid #e5e7eb;
+        border-bottom: 1px solid var(--border);
+      }
+      #viewButtons {
+        display: flex;
+        gap: 8px;
+      }
+      .btn {
+        border: 1px solid var(--border);
+        background: #fff;
+        padding: 6px 10px;
+        border-radius: 8px;
+        cursor: pointer;
+      }
+      .btn.active {
+        background: #111;
+        color: #fff;
+        border-color: #111;
       }
       #granularity {
         width: clamp(220px, 40vw, 520px);
       }
+      #granularityWrap {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
       #detail {
         margin-left: auto;
-        font-size: 0.98rem;
+        font-size: 0.95rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
-      #pieBox {
+      #stage {
         flex: 1 1 auto;
         display: flex;
         align-items: center;
         justify-content: center;
         padding: 16px;
       }
-      svg#pie {
+      svg.vis {
         max-width: 90vw;
         max-height: 90vh;
+        display: block;
       }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
@@ -54,21 +82,31 @@
   </head>
   <body>
     <div id="toolbar">
-      <label for="granularity"><b>Group granularity</b></label>
-      <input
-        id="granularity"
-        type="range"
-        min="0"
-        max="1"
-        step="0.01"
-        value="0"
-      />
-      <small id="granularityHint">coarse</small>
-      <div id="detail">Click a slice to see details</div>
+      <div id="viewButtons">
+        <button class="btn active" data-view="pie" id="btnPie">Pie</button>
+        <button class="btn" data-view="bubbles" id="btnBubbles">Bubbles</button>
+      </div>
+
+      <div id="granularityWrap" title="Right = finer, smaller groups">
+        <label for="granularity"><b>Group granularity</b></label>
+        <input
+          id="granularity"
+          type="range"
+          min="0"
+          max="1"
+          step="0.01"
+          value="0"
+        />
+        <small id="granularityHint" class="muted">coarse</small>
+      </div>
+
+      <div id="detail">Click a slice/bubble to see details</div>
     </div>
-    <div id="pieBox">
+
+    <div id="stage">
       <svg
-        id="pie"
+        id="vis"
+        class="vis"
         viewBox="0 0 500 500"
         preserveAspectRatio="xMidYMid meet"
       ></svg>
