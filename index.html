@@ -1,115 +1,274 @@
+<!-- index.html -->
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />
-    <title>Kid-Needs – Pie & Bubbles</title>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta charset="UTF-8" />
+    <title>Association Viewer</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+
     <style>
-      :root {
-        --bg: #fafafa;
-        --text: #222;
-        --muted: #666;
-        --border: #e5e7eb;
-      }
-      html,
-      body {
-        height: 100%;
-      }
-      body {
+      /* basic reset */
+      * {
+        box-sizing: border-box;
         margin: 0;
-        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica,
-          Arial, sans-serif;
-        background: var(--bg);
-        color: var(--text);
+        padding: 0;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Inter",
+          Roboto, sans-serif;
+      }
+
+      /* full viewport flex column */
+      body {
+        background: #0f172a;
+        color: #f8fafc;
         display: flex;
         flex-direction: column;
+        min-height: 100vh;
       }
-      #toolbar {
-        display: grid;
-        grid-template-columns: auto auto 1fr;
-        gap: 12px;
-        align-items: center;
-        padding: 10px 16px;
-        background: #fff;
-        border-bottom: 1px solid var(--border);
-      }
-      #viewButtons {
+
+      /* toolbar row */
+      header {
+        background: #1e253a;
+        border-bottom: 1px solid #334155;
+        padding: 0.5rem 1rem;
         display: flex;
-        gap: 8px;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 1rem;
+        z-index: 10;
       }
-      .btn {
-        border: 1px solid var(--border);
-        background: #fff;
-        padding: 6px 10px;
-        border-radius: 8px;
+
+      /* group: view switcher buttons */
+      .view-switch {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        background: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 0.5rem;
+        padding: 0.5rem;
+      }
+
+      .view-btn {
+        background: transparent;
+        border: 0;
+        color: #94a3b8;
+        font-size: 0.8rem;
+        line-height: 1rem;
+        padding: 0.4rem 0.6rem;
+        border-radius: 0.4rem;
         cursor: pointer;
       }
-      .btn.active {
-        background: #111;
+
+      /* active button just CSS class */
+      .view-btn.active {
+        background: #475569;
         color: #fff;
-        border-color: #111;
       }
-      #granularity {
-        width: clamp(220px, 40vw, 520px);
-      }
-      #granularityWrap {
+
+      /* slider wrapper */
+      .slider-wrap {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 0.5rem;
+        font-size: 0.8rem;
+        color: #cbd5e1;
       }
-      #detail {
-        margin-left: auto;
-        font-size: 0.95rem;
+
+      .slider-wrap label {
         white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
       }
+
+      .slider-wrap input[type="range"] {
+        appearance: none;
+        height: 4px;
+        background: #475569;
+        border-radius: 2px;
+        cursor: pointer;
+        width: 160px;
+      }
+
+      .slider-wrap input[type="range"]::-webkit-slider-thumb {
+        appearance: none;
+        width: 14px;
+        height: 14px;
+        background: #38bdf8;
+        border-radius: 999px;
+        border: 1px solid #0f172a;
+        cursor: pointer;
+      }
+
+      .slider-wrap input[type="range"]::-moz-range-thumb {
+        width: 14px;
+        height: 14px;
+        background: #38bdf8;
+        border-radius: 999px;
+        border: 1px solid #0f172a;
+        cursor: pointer;
+      }
+
+      /* detail panel */
+      #detail {
+        font-size: 0.75rem;
+        line-height: 1rem;
+        color: #e2e8f0;
+        background: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        min-width: 180px;
+        max-width: 260px;
+        word-wrap: break-word;
+      }
+
+      /* main stage flex-grow so it fills remainder */
       #stage {
         flex: 1 1 auto;
+        position: relative;
         display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 16px;
+        min-height: 0;
       }
-      svg.vis {
-        max-width: 90vw;
-        max-height: 90vh;
+
+      /* svg will sit absolutely full bleed */
+      #stage svg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+
+      /* floating weight editor panel (editor.js will toggle inline styles) */
+      .weight-editor-popover {
+        position: absolute;
+        background: #1e293b;
+        border: 1px solid #475569;
+        border-radius: 0.5rem;
+        box-shadow: 0 16px 32px rgba(0, 0, 0, 0.6);
+        padding: 0.5rem 0.75rem;
+        display: none;
+        font-size: 0.8rem;
+        color: #f8fafc;
+        z-index: 9999;
+        min-width: 150px;
+      }
+
+      .weight-editor-popover label {
         display: block;
+        margin-bottom: 0.25rem;
+        color: #cbd5e1;
+        font-size: 0.7rem;
+        line-height: 1rem;
+      }
+
+      .weight-editor-popover input[type="number"] {
+        width: 100%;
+        background: #0f172a;
+        border: 1px solid #475569;
+        border-radius: 0.4rem;
+        color: #fff;
+        font-size: 0.8rem;
+        padding: 0.4rem 0.5rem;
+        margin-bottom: 0.5rem;
+        outline: none;
+      }
+
+      .weight-editor-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+      }
+
+      .weight-editor-actions button {
+        background: #475569;
+        border: 0;
+        color: #fff;
+        font-size: 0.7rem;
+        line-height: 1rem;
+        padding: 0.4rem 0.6rem;
+        border-radius: 0.4rem;
+        cursor: pointer;
+      }
+
+      .weight-editor-actions button.save-btn {
+        background: #38bdf8;
+        color: #0f172a;
+        font-weight: 600;
+      }
+
+      .weight-editor-actions button.cancel-btn {
+        background: #64748b;
       }
     </style>
-    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
-    <script type="module" src="./controller.js"></script>
   </head>
+
   <body>
-    <div id="toolbar">
-      <div id="viewButtons">
-        <button class="btn active" data-view="pie" id="btnPie">Pie</button>
-        <button class="btn" data-view="bubbles" id="btnBubbles">Bubbles</button>
+    <!-- toolbar with view switcher, slider, and detail box -->
+    <header>
+      <div class="view-switch" id="viewSwitch">
+        <button class="view-btn active" data-view="pie">Pie</button>
+        <button class="view-btn" data-view="bubble">Bubble</button>
+        <button class="view-btn" data-view="force">Force</button>
       </div>
 
-      <div id="granularityWrap" title="Right = finer, smaller groups">
-        <label for="granularity"><b>Group granularity</b></label>
+      <div class="slider-wrap">
+        <label for="groupStrength">Group strength</label>
         <input
-          id="granularity"
+          id="groupStrength"
           type="range"
           min="0"
           max="1"
           step="0.01"
-          value="0"
+          value="0.5"
         />
-        <small id="granularityHint" class="muted">coarse</small>
+        <span id="groupStrengthVal">0.50</span>
       </div>
 
-      <div id="detail">Click a slice/bubble to see details</div>
+      <div id="detail">Click a node/link to edit weight</div>
+    </header>
+
+    <!-- stage holds the visualization svg -->
+    <div id="stage">
+      <svg id="viz"></svg>
     </div>
 
-    <div id="stage">
-      <svg
-        id="vis"
-        class="vis"
-        viewBox="0 0 500 500"
-        preserveAspectRatio="xMidYMid meet"
-      ></svg>
-    </div>
+    <!-- global D3 -->
+    <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+
+    <!-- import modules -->
+    <script type="module">
+      import { initViewer } from "./viewer.js";
+      import { editWeight } from "./editor.js";
+
+      // init the viewer with local data.json (user will replace this file)
+      // data.json should include nodes[], links[] objects with ids, labels, weights
+      const controller = initViewer("./data.json");
+
+      // hook up group strength slider to rerender
+      const slider = document.getElementById("groupStrength");
+      const sliderVal = document.getElementById("groupStrengthVal");
+
+      slider.addEventListener("input", () => {
+        const t = parseFloat(slider.value);
+        sliderVal.textContent = t.toFixed(2);
+        controller.currentThreshold = t;
+        controller.render(controller.currentView);
+      });
+
+      // hook up view switch buttons
+      const switcher = document.getElementById("viewSwitch");
+      switcher.addEventListener("click", (e) => {
+        if (!e.target.matches(".view-btn")) return;
+        const v = e.target.getAttribute("data-view");
+        controller.currentView = v;
+        document.querySelectorAll(".view-btn").forEach((b) => {
+          b.classList.toggle("active", b === e.target);
+        });
+        controller.render(v);
+      });
+
+      // expose editWeight for debugging
+      window.editWeight = editWeight;
+      // expose controller for debugging
+      window.viewerController = controller;
+    </script>
   </body>
 </html>
