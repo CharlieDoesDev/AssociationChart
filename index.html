@@ -73,6 +73,8 @@
     </div>
 
     <script type="module">
+      import * as d3 from "https://cdn.jsdelivr.net/npm/d3@7/+esm";
+
       /* ---------- CONFIG ---------- */
       const GROUPS = [
         "Food",
@@ -168,6 +170,7 @@ sick,fever,thermometer,medicine,stay home,soup,rest,quiet,recover
           return "Social";
         return "Routine";
       }
+
       const nodes = [
         ...new Set(
           RAW.split(/[\n,]+/)
@@ -180,63 +183,53 @@ sick,fever,thermometer,medicine,stay home,soup,rest,quiet,recover
         group: guessGroup(d),
       }));
 
-      /* ---------- BUILD ~300 LINKS ---------- */
       const links = [];
       const add = (a, b, w) => {
         const na = nodes.find((x) => x.label === a),
           nb = nodes.find((x) => x.label === b);
         if (na && nb) links.push({ source: na.id, target: nb.id, w });
       };
-      /* Food */
+
+      /* sample link setup (unchanged) */
       add("tummy hurt", "hunger", 0.95);
       add("tummy hurt", "snack", 0.8);
       add("hunger", "apple", 0.9);
       add("thirsty", "water", 0.95);
       add("apple", "juice", 0.6);
       add("soup", "bread", 0.7);
-      /* Health */
       add("fall", "scrape", 0.9);
       add("scrape", "bandage", 0.9);
       add("bleeding", "clean wound", 0.85);
       add("allergy", "nuts", 0.9);
       add("fever", "medicine", 0.9);
-      /* Emotion */
       add("scary dream", "hug", 0.95);
       add("hug", "mom", 0.9);
       add("cry", "comfort", 0.9);
       add("happy", "laugh", 0.9);
       add("lonely", "hug", 0.8);
-      /* Play */
       add("ball", "run", 0.7);
       add("puzzle", "blocks", 0.8);
       add("game", "laugh", 0.6);
       add("slide", "swing", 0.7);
       add("splash", "puddle", 0.9);
-      /* Safety */
       add("hot", "stove", 0.9);
       add("sharp", "knife", 0.9);
       add("traffic", "seatbelt", 0.95);
       add("rain", "umbrella", 0.9);
-      /* Learning */
       add("book", "story", 0.9);
       add("question", "why", 0.95);
       add("homework", "help", 0.8);
-      /* Body */
       add("potty", "wash hands", 0.9);
       add("bath", "soap", 0.8);
       add("hair tangle", "brush", 0.9);
-      /* Rest */
       add("tired", "yawn", 0.9);
       add("yawn", "nap", 0.9);
       add("dark room", "sleep", 0.8);
-      /* Social */
       add("birthday", "party", 0.95);
       add("party", "friend", 0.8);
       add("grandma", "story", 0.8);
-      /* Routine */
       add("school", "bag", 0.8);
       add("visit", "grandma", 0.7);
-      /* Cross-group */
       add("tummy hurt", "soup", 0.7);
       add("sick", "rest", 0.85);
       add("fall", "cry", 0.6);
@@ -294,7 +287,6 @@ sick,fever,thermometer,medicine,stay home,soup,rest,quiet,recover
         .attr("text-anchor", "middle")
         .text((d) => d.data.group);
 
-      /* ---------- DETAIL PANE ---------- */
       function showDetail(evt, d) {
         const grp = d.data.group;
         const items = [
