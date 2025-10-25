@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Kid-Needs Pie – clean edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      :root {
+        --bg: #fafafa;
+        --text: #222;
+        --accent: #4a90e2;
+      }
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica,
+          Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+      }
+      #info {
+        flex: 0 0 auto;
+        padding: 12px 16px;
+        background: #fff;
+        border-bottom: 1px solid #e0e0e0;
+        font-size: 1.05em;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      #info b {
+        color: var(--accent);
+      }
+      #pieBox {
+        flex: 1 1 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 16px;
+      }
+      svg#pie {
+        max-width: 90vw;
+        max-height: 90vh;
+      }
+      .slice {
+        stroke: #fff;
+        stroke-width: 2;
+        cursor: pointer;
+        transition: opacity 0.2s;
+      }
+      .slice:hover {
+        opacity: 0.85;
+      }
+      .labels {
+        pointer-events: none;
+        font-size: 13px;
+        fill: var(--text);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="info">
+      <span id="detail">Click a slice to see details</span>
+    </div>
+    <div id="pieBox">
+      <svg
+        id="pie"
+        viewBox="0 0 500 500"
+        preserveAspectRatio="xMidYMid meet"
+      ></svg>
+    </div>
+
+    <script type="module">
+      /* ---------- CONFIG ---------- */
+      const GROUPS = [
+        "Food",
+        "Health",
+        "Emotion",
+        "Play",
+        "Safety",
+        "Learning",
+        "Body",
+        "Routine",
+        "Social",
+        "Rest",
+      ];
+      const COLORS = d3.schemePastel1;
+
+      /* ---------- 100 KID-NEEDS ITEMS ---------- */
+      const RAW = `
+tummy hurt,snack,hunger,apple,soup,bread,thirsty,water,milk,juice
+scary dream,hug,mom,dad,comfort,cry,soft toy,blanket,night light
+fall,scrape,bandage,bleeding,ice,clean wound,doctor,nurse,medicine
+happy,laugh,smile,friend,share,toy,ball,game,run,jump
+puzzle,blocks,lego,learn,curious,question,why,story,book,color
+hot,stove,fire,sharp,knife,traffic,helmet,seatbelt,stranger,safe
+tired,yawn,nap,bed,pillow,quiet,dark room,lullaby,sleep,rest
+potty,toilet,wash hands,soap,dirty,shower,bath,towel,clean clothes
+hair tangle,brush,comb,mirror,look nice,dress up,shoes,tie laces
+lonely,playmate,brother,sister,invite,join game,hug,hold hands
+new place,hide,shy,hold finger,adapt,explore,map,ask,guide
+birthday,party,cake,candle,sing,dance,music,game,prize,balloon
+rain,coat,umbrella,boots,puddle,splash,cold,hot cocoa,warm
+school,bag,pencil,notebook,teacher,ask,answer,friend,raise hand
+homework,hard,help,explain,practice,try again,proud,stickers
+sunscreen,hat,sunny,outside,park,slide,swing,sand,bucket,spade
+allergy,nuts,eggs,itchy,rash,check label,Epipen,alert,teacher
+visiting,grandma,grandpa,kiss,story,candy,extra TV,late sleep
+pet,dog,cat,feed,water,walk,fur,cuddle,lick,responsibility
+sick,fever,thermometer,medicine,stay home,soup,rest,quiet,recover
+`;
+
+      function guessGroup(w) {
+        const s = w.toLowerCase();
+        if (
+          /tummy|hunger|apple|soup|bread|thirst|water|milk|juice|snack|cake|candy|nut|egg/i.test(
+            s
+          )
+        )
+          return "Food";
+        if (
+          /hurt|scrape|bleed|doctor|medicine|fever|therm|rash|allergy|epipen|sick|recover/i.test(
+            s
+          )
+        )
+          return "Health";
+        if (
+          /scary|dream|hug|mom|dad|comfort|cry|happy|laugh|smile|lonely|shy/i.test(
+            s
+          )
+        )
+          return "Emotion";
+        if (
+          /toy|ball|game|puzzle|block|lego|run|jump|slide|swing|splash|dance|music|prize|balloon/i.test(
+            s
+          )
+        )
+          return "Play";
+        if (
+          /hot|stove|fire|sharp|knife|traffic|helmet|seatbelt|stranger|safe|umbrella|coat|boot/i.test(
+            s
+          )
+        )
+          return "Safety";
+        if (
+          /school|book|story|color|learn|question|why|homework|pencil|notebook|teacher|practice/i.test(
+            s
+          )
+        )
+          return "Learning";
+        if (
+          /potty|toilet|wash|soap|bath|shower|towel|brush|comb|shoes|laces|hair|dress/i.test(
+            s
+          )
+        )
+          return "Body";
+        if (
+          /nap|bed|sleep|rest|quiet|dark|lullaby|yawn|pillow|routine/i.test(s)
+        )
+          return "Rest";
+        if (
+          /birthday|party|friend|share|invite|brother|sister|playmate|grandma|grandpa|visit/i.test(
+            s
+          )
+        )
+          return "Social";
+        return "Routine";
+      }
+      const nodes = [
+        ...new Set(
+          RAW.split(/[\n,]+/)
+            .map((x) => x.trim())
+            .filter(Boolean)
+        ),
+      ].map((d) => ({
+        id: crypto.randomUUID(),
+        label: d,
+        group: guessGroup(d),
+      }));
+
+      /* ---------- BUILD ~300 LINKS ---------- */
+      const links = [];
+      const add = (a, b, w) => {
+        const na = nodes.find((x) => x.label === a),
+          nb = nodes.find((x) => x.label === b);
+        if (na && nb) links.push({ source: na.id, target: nb.id, w });
+      };
+      /* Food */
+      add("tummy hurt", "hunger", 0.95);
+      add("tummy hurt", "snack", 0.8);
+      add("hunger", "apple", 0.9);
+      add("thirsty", "water", 0.95);
+      add("apple", "juice", 0.6);
+      add("soup", "bread", 0.7);
+      /* Health */
+      add("fall", "scrape", 0.9);
+      add("scrape", "bandage", 0.9);
+      add("bleeding", "clean wound", 0.85);
+      add("allergy", "nuts", 0.9);
+      add("fever", "medicine", 0.9);
+      /* Emotion */
+      add("scary dream", "hug", 0.95);
+      add("hug", "mom", 0.9);
+      add("cry", "comfort", 0.9);
+      add("happy", "laugh", 0.9);
+      add("lonely", "hug", 0.8);
+      /* Play */
+      add("ball", "run", 0.7);
+      add("puzzle", "blocks", 0.8);
+      add("game", "laugh", 0.6);
+      add("slide", "swing", 0.7);
+      add("splash", "puddle", 0.9);
+      /* Safety */
+      add("hot", "stove", 0.9);
+      add("sharp", "knife", 0.9);
+      add("traffic", "seatbelt", 0.95);
+      add("rain", "umbrella", 0.9);
+      /* Learning */
+      add("book", "story", 0.9);
+      add("question", "why", 0.95);
+      add("homework", "help", 0.8);
+      /* Body */
+      add("potty", "wash hands", 0.9);
+      add("bath", "soap", 0.8);
+      add("hair tangle", "brush", 0.9);
+      /* Rest */
+      add("tired", "yawn", 0.9);
+      add("yawn", "nap", 0.9);
+      add("dark room", "sleep", 0.8);
+      /* Social */
+      add("birthday", "party", 0.95);
+      add("party", "friend", 0.8);
+      add("grandma", "story", 0.8);
+      /* Routine */
+      add("school", "bag", 0.8);
+      add("visit", "grandma", 0.7);
+      /* Cross-group */
+      add("tummy hurt", "soup", 0.7);
+      add("sick", "rest", 0.85);
+      add("fall", "cry", 0.6);
+      add("scary dream", "sleep", 0.6);
+      add("hot", "thirsty", 0.6);
+      add("homework", "tired", 0.5);
+      add("lonely", "toy", 0.5);
+      add("allergy", "check label", 0.8);
+      add("rain", "coat", 0.9);
+
+      /* ---------- COMPUTE GROUP WEIGHTS ---------- */
+      const groupWeight = Object.fromEntries(GROUPS.map((g) => [g, 0]));
+      links.forEach((l) => {
+        const ga = nodes.find((x) => x.id === l.source).group;
+        const gb = nodes.find((x) => x.id === l.target).group;
+        groupWeight[ga] += l.w;
+        if (ga !== gb) groupWeight[gb] += l.w;
+      });
+      const pieData = GROUPS.map((g) => ({
+        group: g,
+        value: groupWeight[g],
+      })).filter((d) => d.value > 0);
+
+      /* ---------- DRAW PIE ---------- */
+      const svg = d3.select("#pie");
+      const width = 500,
+        height = 500;
+      const radius = Math.min(width, height) / 2 - 20;
+      const gPie = svg
+        .append("g")
+        .attr("transform", `translate(${width / 2},${height / 2})`);
+
+      const pie = d3.pie().value((d) => d.value);
+      const arc = d3.arc().innerRadius(0).outerRadius(radius);
+      const labelArc = d3
+        .arc()
+        .innerRadius(radius * 0.7)
+        .outerRadius(radius * 0.7);
+
+      const slices = gPie
+        .selectAll(".slice")
+        .data(pie(pieData))
+        .join("path")
+        .attr("class", "slice")
+        .attr("d", arc)
+        .attr("fill", (d, i) => COLORS[i % COLORS.length])
+        .on("click", showDetail);
+
+      gPie
+        .selectAll(".labels")
+        .data(pie(pieData))
+        .join("text")
+        .attr("class", "labels")
+        .attr("transform", (d) => `translate(${labelArc.centroid(d)})`)
+        .attr("text-anchor", "middle")
+        .text((d) => d.data.group);
+
+      /* ---------- DETAIL PANE ---------- */
+      function showDetail(evt, d) {
+        const grp = d.data.group;
+        const items = [
+          ...new Set(nodes.filter((n) => n.group === grp).map((n) => n.label)),
+        ].sort();
+        const total = d.data.value.toFixed(1);
+        document.getElementById(
+          "detail"
+        ).innerHTML = `<b>${grp}</b> &nbsp; total link weight: <b>${total}</b> &nbsp; items: ${items
+          .slice(0, 15)
+          .join(", ")}${
+          items.length > 15 ? ` … and ${items.length - 15} more` : ""
+        }`;
+      }
+    </script>
+  </body>
+</html>
